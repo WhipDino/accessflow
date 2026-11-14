@@ -1,141 +1,76 @@
+# Compute em Azure App Service (containers do GHCR). A versao com VM esta em main.tf.vm
 resource "azurerm_resource_group" "rg" {
-  name     = "rg-${var.prefix}"
+  name     = "rg-accessflow-${var.location}"
   location = var.location
+  tags     = { projeto = "accessflow", disciplina = "devops" }
 }
 
-resource "azurerm_virtual_network" "vnet" {
-  name                = "vnet-${var.prefix}"
-  address_space       = ["10.10.0.0/16"]
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-}
-
-resource "azurerm_subnet" "subnet" {
-  name                 = "snet-${var.prefix}"
-  resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.10.1.0/24"]
-}
-
-resource "azurerm_public_ip" "pip" {
-  name                = "pip-${var.prefix}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
-
-resource "azurerm_network_security_group" "nsg" {
-  name                = "nsg-${var.prefix}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  # publico: so a aplicacao
-  #trivy:ignore:AVD-AZU-0047
-  # justificativa: 80/443 precisam ser publicos, e o MVP e uma pagina web para cidadaos
-  security_rule {
-    name                       = "http"
-    priority                   = 100
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "80"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  #trivy:ignore:AVD-AZU-0047
-  # justificativa: 80/443 precisam ser publicos, e o MVP e uma pagina web para cidadaos
-  security_rule {
-    name                       = "https"
-    priority                   = 110
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "443"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  # administrativo: somente o IP do admin
-  security_rule {
-    name                       = "ssh-admin"
-    priority                   = 200
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = var.admin_cidr
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "grafana-admin"
-    priority                   = 210
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "3000"
-    source_address_prefix      = var.admin_cidr
-    destination_address_prefix = "*"
-  }
-}
-
-resource "azurerm_network_interface" "nic" {
-  name                = "nic-${var.prefix}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.subnet.id
-    private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.pip.id
-  }
-}
-
-resource "azurerm_network_interface_security_group_association" "nic_nsg" {
-  network_interface_id      = azurerm_network_interface.nic.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-resource "azurerm_linux_virtual_machine" "vm" {
-  name                = "vm-${var.prefix}"
+resource "azurerm_service_plan" "plan" {
+  name                = "plan-accessflow"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-  size                = var.vm_size
-  admin_username      = "azureuser"
+  os_type             = "Linux"
+  sku_name            = "B1"
+}
 
-  network_interface_ids = [azurerm_network_interface.nic.id]
+resource "azurerm_log_analytics_workspace" "logs" {
+  name                = "log-accessflow"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+}
 
-  disable_password_authentication = true
+resource "azurerm_linux_web_app" "api" {
+  name                = "accessflow-api-rm550453-${var.location}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  service_plan_id     = azurerm_service_plan.plan.id
+  https_only          = true
 
-  admin_ssh_key {
-    username   = "azureuser"
-    public_key = var.ssh_public_key
+  site_config {
+    always_on         = true
+    health_check_path = "/health"
+    health_check_eviction_time_in_min = 5
+    application_stack {
+      docker_image_name   = "whipdino/accessflow-api:latest"
+      docker_registry_url = "https://ghcr.io"
+    }
   }
 
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "StandardSSD_LRS"
-    disk_size_gb         = 30
+  app_settings = {
+    WEBSITES_PORT = "8000"
   }
+}
 
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts-gen2"
-    version   = "latest"
+resource "azurerm_monitor_diagnostic_setting" "api" {
+  name                       = "diag-api"
+  target_resource_id         = azurerm_linux_web_app.api.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+  enabled_log { category = "AppServiceHTTPLogs" }
+  enabled_log { category = "AppServiceConsoleLogs" }
+  metric { category = "AllMetrics" }
+}
+
+resource "azurerm_monitor_action_group" "ag" {
+  name                = "ag-accessflow"
+  resource_group_name = azurerm_resource_group.rg.name
+  short_name          = "accessflow"
+}
+
+resource "azurerm_monitor_metric_alert" "erros5xx" {
+  name                = "alerta-erros-5xx"
+  resource_group_name = azurerm_resource_group.rg.name
+  scopes              = [azurerm_linux_web_app.api.id]
+  severity            = 2
+  frequency           = "PT1M"
+  window_size         = "PT5M"
+  criteria {
+    metric_namespace = "Microsoft.Web/sites"
+    metric_name      = "Http5xx"
+    aggregation      = "Total"
+    operator         = "GreaterThan"
+    threshold        = 5
   }
-
-  custom_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    repo_url               = var.repo_url
-    grafana_admin_password = var.grafana_admin_password
-    api_image              = var.api_image
-    frontend_image         = var.frontend_image
-  }))
+  action { action_group_id = azurerm_monitor_action_group.ag.id }
 }

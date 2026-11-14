@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO="${1:?uso: $0 DONO/REPO}"
-RG="rg-accessflow"
+RG="rg-accessflow-brazilsouth"
 SUB=$(az account show --query id -o tsv)
 TENANT=$(az account show --query tenantId -o tsv)
 
@@ -13,7 +13,7 @@ APP_ID=$(az ad app create --display-name "accessflow-github-deploy" --query appI
 az ad sp create --id "$APP_ID" >/dev/null
 
 # menor privilegio: so pode operar VMs dentro do resource group do projeto
-az role assignment create --assignee "$APP_ID" --role "Virtual Machine Contributor" \
+az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
   --scope "/subscriptions/$SUB/resourceGroups/$RG" >/dev/null
 
 az ad app federated-credential create --id "$APP_ID" --parameters "{
@@ -28,4 +28,4 @@ echo "AZURE_CLIENT_ID=$APP_ID"
 echo "AZURE_TENANT_ID=$TENANT"
 echo "AZURE_SUBSCRIPTION_ID=$SUB"
 echo "AZURE_RESOURCE_GROUP=$RG"
-echo "AZURE_VM_NAME=vm-accessflow"
+echo "AZURE_WEBAPP_NAME=accessflow-api-rm550453-brazilsouth"
