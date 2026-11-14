@@ -1,0 +1,19 @@
+groups:
+  - name: accessflow
+    rules:
+      - alert: ApiDown
+        expr: up{job="accessflow-api"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "API do AccessFlow fora do ar"
+      - alert: TaxaDeErrosAlta
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[1m]))
+            / clamp_min(sum(rate(http_requests_total[1m])), 0.001) > 0.2
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mais de 20% das requisicoes com erro 5xx"

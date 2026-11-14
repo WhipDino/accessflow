@@ -1,0 +1,40 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: accessflow
+    folder: AccessFlow
+    interval: 30s
+    rules:
+      - uid: af-api-down
+        title: API fora do ar
+        condition: C
+        for: 30s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "A API do AccessFlow nao esta respondendo ao Prometheus"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="accessflow-api"}
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+              refId: C

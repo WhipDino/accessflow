@@ -1,0 +1,143 @@
+name: ci-cd
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  # nomes de imagem em minusculas, como o GHCR exige
+  API_IMAGE: ghcr.io/${{ github.repository_owner }}/accessflow-api
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/accessflow-frontend
+
+jobs:
+  gitleaks:
+    name: Gitleaks (segredos)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  semgrep:
+    name: Semgrep (SAST)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config p/default --error --metrics=off
+
+  build-scan:
+    name: Build e Trivy (${{ matrix.componente }})
+    runs-on: ubuntu-latest
+    needs: [gitleaks, semgrep]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - componente: api
+            contexto: ./api
+          - componente: frontend
+            contexto: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build da imagem
+        run: docker build -t accessflow-${{ matrix.componente }}:${{ github.sha }} ${{ matrix.contexto }}
+
+      - name: Trivy na imagem (HIGH e CRITICAL barram)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: accessflow-${{ matrix.componente }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  trivy-repo:
+    name: Trivy (repositorio e Terraform)
+    runs-on: ubuntu-latest
+    needs: [gitleaks, semgrep]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  publish:
+    name: Publicar imagens no GHCR
+    runs-on: ubuntu-latest
+    needs: [build-scan, trivy-repo]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login no GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build e push
+        run: |
+          for c in api frontend; do
+            img="ghcr.io/${{ github.repository_owner }}/accessflow-$c"
+            img="${img,,}"
+            docker build -t "$img:${{ github.sha }}" -t "$img:latest" "./$c"
+            docker push "$img:${{ github.sha }}"
+            docker push "$img:latest"
+          done
+
+  deploy:
+    name: Deploy na VM (Azure, sem porta admin aberta)
+    runs-on: ubuntu-latest
+    needs: [publish]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      id-token: write # OIDC: sem senha da Azure guardada
+      contents: read
+    steps:
+      - name: Login na Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Atualizar containers na VM (az vm run-command)
+        env:
+          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          VM: ${{ secrets.AZURE_VM_NAME }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          az vm run-command invoke -g "$RG" -n "$VM" --command-id RunShellScript --scripts "
+            set -e
+            cd /opt/accessflow
+            git fetch --depth 1 origin main && git reset --hard origin/main
+            sed -i '/^API_IMAGE=/d;/^FRONTEND_IMAGE=/d' .env
+            echo 'API_IMAGE=ghcr.io/${OWNER}/accessflow-api:${GITHUB_SHA}' >> .env
+            echo 'FRONTEND_IMAGE=ghcr.io/${OWNER}/accessflow-frontend:${GITHUB_SHA}' >> .env
+            docker compose pull api frontend
+            docker compose up -d --remove-orphans
+          "
+
+      - name: Smoke test na URL publica
+        env:
+          RG: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          VM: ${{ secrets.AZURE_VM_NAME }}
+        run: |
+          IP=$(az vm show -d -g "$RG" -n "$VM" --query publicIps -o tsv)
+          for i in $(seq 1 12); do
+            if curl -fsS "http://$IP/api/health"; then echo; echo "OK em http://$IP"; exit 0; fi
+            sleep 10
+          done
+          echo "MVP nao respondeu" >&2; exit 1

@@ -1,0 +1,13 @@
+# segredos e estado do Terraform: NUNCA no git
+.env
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+crash.log
+*.pem
+*.key
+__pycache__/
+.venv/
