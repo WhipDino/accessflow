@@ -63,7 +63,7 @@ Tudo roda em Brasil Sul, então os dados ficam em território nacional. A polít
 
 ## Custo
 
-O App Service Plan B1 Linux é o único custo relevante (estimativa de cerca de US$ 13 por mês; ver o print da calculadora de preços da Azure no relatório). O frontend reaproveita o mesmo plano. O Log Analytics tem franquia gratuita mensal suficiente para este volume. A assinatura Azure for Students cobre o período de avaliação.
+O App Service Plan B1 Linux é o único custo relevante (US$ 14,60 por mês na calculadora de preços da Azure, 730 horas em Brasil Sul; print em `docs/evidencias/09-custo-calculadora.jpg`). O frontend reaproveita o mesmo plano. O Log Analytics tem franquia gratuita mensal suficiente para este volume. A assinatura Azure for Students cobre o período de avaliação.
 
 ## Decisões e limites
 
