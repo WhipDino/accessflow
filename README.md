@@ -20,24 +20,24 @@ Plataforma que identifica obstáculos em passagens acessíveis de clínicas e un
 | Cidadão e território | Pessoas com deficiência e com mobilidade reduzida que usam clínicas e unidades de saúde; PREENCHER cidade/bairro do percurso piloto |
 | Problema, em uma frase | Obstáculos em passagens acessíveis de unidades de saúde não são detectados nem resolvidos a tempo. |
 | Proposta de valor | Detectar, registrar, acionar o responsável e verificar a resolução, com evidência e histórico. |
-| Arquitetura: componentes | Frontend (nginx), API, robô de inspeção (ultrassônico), visão computacional (YOLO), RPA, LLM local com RAG, pipeline Airflow/Databricks, Docker, Terraform, GitHub Actions, Prometheus e Grafana na Azure. Ver [docs/arquitetura.md](docs/arquitetura.md). |
+| Arquitetura: componentes | Frontend (nginx), API, robô de inspeção (ultrassônico), visão computacional (YOLO), RPA, LLM local com RAG, pipeline Airflow/Databricks, Docker, Terraform, GitHub Actions, Azure App Service e Azure Monitor na nuvem (Prometheus e Grafana locais via docker-compose). Ver [docs/arquitetura.md](docs/arquitetura.md). |
 | Fontes de dados | PREENCHER (registros do sistema e dados públicos de estabelecimentos) |
 | Modelos de IA utilizados | YOLO (detecção de obstáculos), LLM local com RAG e agente. PREENCHER nomes e versões. |
-| URL do MVP e repositório | PREENCHER após o deploy: `http://<IP da VM>` e link deste repositório |
+| URL do MVP e repositório | Site: https://accessflow-web-rm550453-brazilsouth.azurewebsites.net. API: https://accessflow-api-rm550453-brazilsouth.azurewebsites.net (Swagger em /docs). Repositório: https://github.com/WhipDino/accessflow |
 | Indicadores de impacto | PREENCHER (ex.: tempo médio de resolução de obstruções, % de trechos sem bloqueio) |
 | ODS conectados | ODS 3 (Saúde e bem-estar), ODS 10 (Redução das desigualdades), ODS 11 (Cidades e comunidades sustentáveis). PREENCHER como o projeto contribui para cada meta. |
 
 ## Como o DevOps funciona (Secure DevOps Tools & Cloud Computing, "Deploy Blindado")
 
 ```
-git push -> Gitleaks -> Semgrep -> build + Trivy -> push no GHCR -> deploy na VM (OIDC) -> smoke test
+git push -> Gitleaks -> Semgrep -> build + Trivy -> push no GHCR -> deploy no App Service (OIDC) -> smoke test
 ```
 
 | Critério da disciplina | Onde está |
 |---|---|
 | Dockerfile enxuto, não root, sem segredo | `api/Dockerfile`, `frontend/Dockerfile` |
 | Stack com `docker compose` | `docker-compose.yml` |
-| Nuvem por Terraform, state e `.tfvars` fora do repo, sem porta admin em `0.0.0.0/0` | `terraform/` (a variável `admin_cidr` rejeita `0.0.0.0/0`), `.gitignore` |
+| Nuvem por Terraform, state e `.tfvars` fora do repo, sem segredos no código | `terraform/` (HTTPS obrigatório, sem porta administrativa exposta), `.gitignore` |
 | GitHub Actions com build, Gitleaks, Semgrep e Trivy, segredos no GitHub Secrets, deploy automático | `.github/workflows/ci-cd.yml` |
 | Dashboard das 4 métricas de ouro e alerta | `monitoring/` (Prometheus, Grafana provisionado) |
 | Diagrama, responsabilidade compartilhada, LGPD, custo | `docs/arquitetura.md` |
@@ -57,7 +57,7 @@ docker compose up -d --build
 
 ### 2. Nuvem (Azure)
 
-Pré-requisitos: `az login`, Terraform >= 1.6, uma chave SSH, repositório público no GitHub.
+Pré-requisitos: `az login`, Terraform >= 1.6, repositório público no GitHub.
 
 ```bash
 cd terraform
@@ -81,7 +81,7 @@ Cadastre os 5 valores impressos em *GitHub > Settings > Secrets and variables > 
 
 ```bash
 for i in $(seq 1 50); do curl -s -o /dev/null http://<IP>/api/erro-teste; done   # taxa de erros sobe
-docker compose stop api                                                          # na VM: alerta "API fora do ar" dispara
+docker compose stop api                                                          # no compose local: alerta "API fora do ar" dispara
 ```
 
 Tire o print do Grafana (dashboard e alerta em *Firing*) e suba a API de novo com `docker compose start api`.
