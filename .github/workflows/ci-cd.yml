@@ -123,6 +123,8 @@ jobs:
             --container-image-name "ghcr.io/${OWNER}/accessflow-api:${GITHUB_SHA}" \
             --container-registry-url https://ghcr.io
           az webapp restart -g "$RG" -n "$APP"
+          # o frontend usa a tag latest: reiniciar faz o App Service baixar a imagem nova
+          az webapp restart -g "$RG" -n "${APP/-api-/-web-}"
 
       - name: Smoke test na URL publica
         env:
