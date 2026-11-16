@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      # definido no .env da VM (gerado pelo Terraform) ou no .env local; nunca no git
+      # definido no .env local; nunca no git
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?defina GRAFANA_ADMIN_PASSWORD no .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
@@ -41,7 +41,7 @@ services:
     depends_on:
       - prometheus
     ports:
-      - "3000:3000" # no Azure, o NSG so libera esta porta para o IP do admin
+      - "3000:3000"
 
 volumes:
   prom_data:

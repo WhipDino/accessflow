@@ -17,15 +17,15 @@ Plataforma que identifica obstáculos em passagens acessíveis de clínicas e un
 | Campo | Valor |
 |---|---|
 | Nome do produto | AccessFlow |
-| Cidadão e território | Pessoas com deficiência e com mobilidade reduzida que usam clínicas e unidades de saúde; PREENCHER cidade/bairro do percurso piloto |
+| Cidadão e território | Pessoas com deficiência e com mobilidade reduzida que usam clínicas e unidades de saúde. Piloto pensado para unidades de saúde da cidade de São Paulo (SP) |
 | Problema, em uma frase | Obstáculos em passagens acessíveis de unidades de saúde não são detectados nem resolvidos a tempo. |
 | Proposta de valor | Detectar, registrar, acionar o responsável e verificar a resolução, com evidência e histórico. |
 | Arquitetura: componentes | Frontend (nginx), API, robô de inspeção (ultrassônico), visão computacional (YOLO), RPA, LLM local com RAG, pipeline Airflow/Databricks, Docker, Terraform, GitHub Actions, Azure App Service e Azure Monitor na nuvem (Prometheus e Grafana locais via docker-compose). Ver [docs/arquitetura.md](docs/arquitetura.md). |
-| Fontes de dados | PREENCHER (registros do sistema e dados públicos de estabelecimentos) |
-| Modelos de IA utilizados | YOLO (detecção de obstáculos), LLM local com RAG e agente. PREENCHER nomes e versões. |
+| Fontes de dados | Ocorrências registradas no próprio sistema (registro manual no site, robô de inspeção e visão computacional) e coordenadas dos endereços obtidas no OpenStreetMap (Nominatim). No MVP publicado, as unidades e ocorrências iniciais são fictícias. |
+| Modelos de IA utilizados | YOLO para detecção de obstáculos (Visão Computacional) e LLM local com RAG e agente (IA Generativa). Modelos e versões estão detalhados nas entregas dessas disciplinas. |
 | URL do MVP e repositório | Site: https://accessflow-web-rm550453-brazilsouth.azurewebsites.net. API: https://accessflow-api-rm550453-brazilsouth.azurewebsites.net (Swagger em /docs). Repositório: https://github.com/WhipDino/accessflow |
-| Indicadores de impacto | PREENCHER (ex.: tempo médio de resolução de obstruções, % de trechos sem bloqueio) |
-| ODS conectados | ODS 3 (Saúde e bem-estar), ODS 10 (Redução das desigualdades), ODS 11 (Cidades e comunidades sustentáveis). PREENCHER como o projeto contribui para cada meta. |
+| Indicadores de impacto | Tempo médio entre o registro e a resolução de um obstáculo; percentual de unidades com a rota acessível livre; número de ocorrências pendentes por unidade e por gravidade. |
+| ODS conectados | ODS 3 (Saúde e bem-estar), ODS 10 (Redução das desigualdades), ODS 11 (Cidades e comunidades sustentáveis). O projeto mantém livre o caminho até o atendimento de saúde (ODS 3), reduz uma barreira que atinge mais quem tem deficiência ou mobilidade reduzida (ODS 10) e torna prédios públicos mais acessíveis (ODS 11). |
 
 ## Como o DevOps funciona (Secure DevOps Tools & Cloud Computing, "Deploy Blindado")
 
@@ -39,7 +39,7 @@ git push -> Gitleaks -> Semgrep -> build + Trivy -> push no GHCR -> deploy no Ap
 | Stack com `docker compose` | `docker-compose.yml` |
 | Nuvem por Terraform, state e `.tfvars` fora do repo, sem segredos no código | `terraform/` (HTTPS obrigatório, sem porta administrativa exposta), `.gitignore` |
 | GitHub Actions com build, Gitleaks, Semgrep e Trivy, segredos no GitHub Secrets, deploy automático | `.github/workflows/ci-cd.yml` |
-| Dashboard das 4 métricas de ouro e alerta | `monitoring/` (Prometheus, Grafana provisionado) |
+| Dashboard das 4 métricas de ouro e alerta | `monitoring/` (Prometheus e Grafana provisionados), `scripts/obs-publicado.sh` e alerta de 5xx no Azure Monitor (`terraform/main.tf`) |
 | Diagrama, responsabilidade compartilhada, LGPD, custo | `docs/arquitetura.md` |
 
 ## Como reproduzir
@@ -51,7 +51,7 @@ cp .env.example .env          # defina GRAFANA_ADMIN_PASSWORD
 docker compose up -d --build
 ```
 
-- App: http://localhost (a API responde em `/api/health`)
+- Site: http://localhost (a API responde em `/api/health`)
 - Grafana: http://localhost:3000 (usuário `admin`, senha do `.env`), pasta **AccessFlow**
 - Prometheus: http://127.0.0.1:9090
 
@@ -61,13 +61,13 @@ Pré-requisitos: `az login`, Terraform >= 1.6, repositório público no GitHub.
 
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # preencha (arquivo ignorado pelo git)
+cp terraform.tfvars.example terraform.tfvars   # informe o ID da assinatura (arquivo ignorado pelo git)
 terraform init
 terraform plan
 terraform apply
 ```
 
-O output `mvp_url` é a URL pública do MVP.
+Os outputs `web_url` e `api_url` são as URLs públicas do site e da API. São criados dois App Services Linux no mesmo plano B1, o Log Analytics e o alerta de erros 5xx.
 
 ### 3. Deploy automático (uma vez)
 
@@ -75,16 +75,21 @@ O output `mvp_url` é a URL pública do MVP.
 ./scripts/setup-oidc.sh SEU_USUARIO/accessflow
 ```
 
-Cadastre os 5 valores impressos em *GitHub > Settings > Secrets and variables > Actions*. Depois do primeiro push na `main`, torne os pacotes `accessflow-api` e `accessflow-frontend` **públicos** em *GitHub > Packages > Package settings*, para a VM baixar as imagens sem credencial.
+Cadastre os 5 valores impressos em *GitHub > Settings > Secrets and variables > Actions*. Depois do primeiro push na `main`, torne os pacotes `accessflow-api` e `accessflow-frontend` **públicos** em *GitHub > Packages > Package settings*, para o App Service baixar as imagens sem credencial.
 
 ### 4. Provar a observabilidade
 
+Dashboard das 4 métricas de ouro, com Prometheus e Grafana locais coletando da API publicada (não precisa de Docker):
+
 ```bash
-for i in $(seq 1 50); do curl -s -o /dev/null http://<IP>/api/erro-teste; done   # taxa de erros sobe
-docker compose stop api                                                          # no compose local: alerta "API fora do ar" dispara
+./scripts/obs-publicado.sh            # sobe Prometheus (9090) e Grafana (3000)
+API=https://accessflow-api-rm550453-brazilsouth.azurewebsites.net
+for i in $(seq 1 200); do curl -s -o /dev/null $API/ocorrencias; [ $((i % 6)) = 0 ] && curl -s -o /dev/null $API/erro-teste; sleep 1; done
 ```
 
-Tire o print do Grafana (dashboard e alerta em *Firing*) e suba a API de novo com `docker compose start api`.
+Abra `http://localhost:3000/d/accessflow-golden`. O alerta de erros 5xx do Azure Monitor (criado pelo Terraform) dispara quando há mais de 5 respostas 5xx em 5 minutos; ele aparece em *Azure Portal > Monitor > Alertas*.
+
+Com Docker, `docker compose up -d` sobe a mesma pilha de monitoramento apontando para a API local.
 
 ### 5. Evidência "barrada e corrigida"
 
