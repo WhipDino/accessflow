@@ -6,11 +6,11 @@ Plataforma que identifica obstáculos em passagens acessíveis de clínicas e un
 
 | Nome completo | RM |
 |---|---|
-| PREENCHER | PREENCHER |
-| PREENCHER | PREENCHER |
-| PREENCHER | PREENCHER |
-
-> Nome completo e RM de **todos** os integrantes. O enunciado desconta nota se faltar algum.
+| Juliana Villalpando Maita | 99224 |
+| João Victor Dos Santos Morais | 550453 |
+| Luana Cabezaolias | 99320 |
+| Pedro Henrique Pontes Farath | 98608 |
+| Lucca Vilaça Okubo | 551538 |
 
 ## Ficha Técnica do MVP
 
@@ -99,4 +99,4 @@ Tire o print do Grafana (dashboard e alerta em *Firing*) e suba a API de novo co
 
 ## Aviso sobre este repositório base
 
-`api/main.py` e `frontend/index.html` são **placeholders** só para provar o pipeline. O time substitui pelos componentes reais mantendo: `GET /health`, `GET /metrics` (Prometheus), e o `Dockerfile` não root de cada serviço.
+A API (`api/main.py`) guarda as ocorrências em memória e sobe com dados fictícios de demonstração. O frontend (`frontend/site/`) é um globo 3D que aproxima do endereço registrado e abre um gêmeo digital do local, feito com Three.js embutido (sem CDN). Ao integrar os componentes reais do time, mantenha `GET /health`, `GET /metrics` (Prometheus) e o `Dockerfile` não root de cada serviço.

@@ -7,10 +7,11 @@ metricas, e substitua o resto pelo codigo do time.
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="AccessFlow API", version="0.1.0")
 
@@ -28,10 +29,48 @@ IN_PROGRESS = Gauge("http_requests_in_progress", "Requisicoes em andamento (satu
 OCORRENCIAS: dict[str, dict] = {}
 
 
+Trecho = Literal["calcada", "vaga", "rampa", "entrada", "recepcao", "corredor", "banheiro", "elevador"]
+
+
 class OcorrenciaIn(BaseModel):
-    local: str
-    descricao: str
-    origem: str = "manual"  # manual | visao | robo
+    local: str = Field(min_length=1, max_length=80)
+    descricao: str = Field(min_length=1, max_length=400)
+    origem: Literal["manual", "visao", "robo"] = "manual"
+    endereco: str | None = Field(default=None, max_length=160)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
+    gravidade: Literal["baixa", "media", "alta"] = "media"
+    trecho: Trecho = "entrada"
+
+
+def _registrar(o: OcorrenciaIn, status: str = "pendente") -> dict:
+    oid = str(uuid.uuid4())
+    OCORRENCIAS[oid] = {
+        "id": oid,
+        **o.model_dump(),
+        "status": status,
+        "criada_em": datetime.now(timezone.utc).isoformat(),
+    }
+    return OCORRENCIAS[oid]
+
+
+# Dados FICTICIOS de demonstracao: unidades e enderecos inventados, sem dado pessoal.
+_DEMO = [
+    ("UBS Vila Aurora", "Rua das Acacias, 120 - Sao Paulo, SP", -23.5712, -46.6405, "rampa", "alta", "robo",
+     "Carrinho de limpeza parado no meio da rampa de acesso", "pendente"),
+    ("UBS Vila Aurora", "Rua das Acacias, 120 - Sao Paulo, SP", -23.5712, -46.6405, "corredor", "media", "visao",
+     "Cadeiras empilhadas estreitando o corredor", "pendente"),
+    ("UBS Vila Aurora", "Rua das Acacias, 120 - Sao Paulo, SP", -23.5712, -46.6405, "vaga", "media", "manual",
+     "Moto estacionada na vaga acessivel", "resolvida"),
+    ("Clinica Horizonte", "Av. Beira Rio, 455 - Recife, PE", -8.0578, -34.8829, "elevador", "alta", "manual",
+     "Elevador fora de operacao e sem sinalizacao", "pendente"),
+    ("Centro de Saude Ribeira", "Rua do Porto, 88 - Manaus, AM", -3.1190, -60.0217, "calcada", "media", "visao",
+     "Piso tatil interrompido por tapume de obra", "pendente"),
+    ("Policlinica Lago Sul", "Quadra 12, Bloco B - Brasilia, DF", -15.7975, -47.8919, "banheiro", "baixa", "manual",
+     "Porta do banheiro acessivel nao trava", "resolvida"),
+]
+for _l, _e, _la, _ln, _t, _g, _o, _d, _s in _DEMO:
+    _registrar(OcorrenciaIn(local=_l, endereco=_e, lat=_la, lng=_ln, trecho=_t, gravidade=_g, origem=_o, descricao=_d), _s)
 
 
 @app.middleware("http")
@@ -65,14 +104,7 @@ def metrics():
 
 @app.post("/ocorrencias", status_code=201)
 def criar(o: OcorrenciaIn):
-    oid = str(uuid.uuid4())
-    OCORRENCIAS[oid] = {
-        "id": oid,
-        **o.model_dump(),
-        "status": "pendente",
-        "criada_em": datetime.now(timezone.utc).isoformat(),
-    }
-    return OCORRENCIAS[oid]
+    return _registrar(o)
 
 
 @app.get("/ocorrencias")
@@ -85,6 +117,7 @@ def resolver(oid: str):
     if oid not in OCORRENCIAS:
         raise HTTPException(404, "Ocorrencia nao encontrada")
     OCORRENCIAS[oid]["status"] = "resolvida"
+    OCORRENCIAS[oid]["resolvida_em"] = datetime.now(timezone.utc).isoformat()
     return OCORRENCIAS[oid]
 
 

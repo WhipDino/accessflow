@@ -59,7 +59,7 @@ O acesso do pipeline à Azure usa uma identidade federada com a função Website
 
 ## LGPD e região
 
-Tudo roda em Brasil Sul, então os dados ficam em território nacional. A política da assinatura de estudante restringe as regiões permitidas. As ocorrências da demonstração são fictícias e não guardam dados pessoais. Em produção, seria necessário base legal, minimização de dados e política de retenção para qualquer dado de pessoa.
+Tudo roda em Brasil Sul, então os dados ficam em território nacional. A política da assinatura de estudante restringe as regiões permitidas. As ocorrências da demonstração são fictícias e não guardam dados pessoais. O endereço digitado no registro é enviado ao serviço público de geocodificação do OpenStreetMap (Nominatim) para obter a coordenada; nenhum dado de pessoa vai junto. Em produção, seria necessário base legal, minimização de dados e política de retenção para qualquer dado de pessoa.
 
 ## Custo
 

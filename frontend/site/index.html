@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AccessFlow · Monitoramento de acessibilidade</title>
+  <meta name="description" content="Registre obstáculos em rotas acessíveis de unidades de saúde e acompanhe a resolução em um gêmeo digital 3D.">
+  <meta name="theme-color" content="#050912">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23050912'/%3E%3Cpath d='M5 21c5-9 9 5 14-4s6-3 8-6' fill='none' stroke='%233fe0c0' stroke-width='2.6' stroke-linecap='round'/%3E%3Ccircle cx='27' cy='11' r='2.6' fill='%233fe0c0'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/bricolage.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="gl" aria-hidden="true"></canvas>
+  <div id="labels"></div>
+  <div id="tip" role="status" hidden></div>
+  <div id="veil" aria-live="polite"><p id="veil-text"></p></div>
+
+  <main>
+    <!-- ============ VISÃO 1: GLOBO ============ -->
+    <section id="view-globe" class="view" aria-label="Registro de ocorrências">
+      <div class="panel intake">
+        <div class="brand">
+          <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+            <circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+            <path d="M5 21c5-9 9 5 14-4s6-3 8-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+            <circle cx="27" cy="11" r="2.6" fill="currentColor"/>
+          </svg>
+          <span>AccessFlow</span>
+        </div>
+
+        <h1>Nenhum obstáculo fica <em>invisível</em>.</h1>
+        <p class="lead">Registre um bloqueio em uma rota acessível. Nós levamos você até o local, em 3D, para acompanhar a resolução.</p>
+
+        <form id="form" novalidate>
+          <div class="field">
+            <label for="f-local">Unidade de saúde</label>
+            <input id="f-local" name="local" required maxlength="80" autocomplete="off" placeholder="Ex.: UBS Jardim das Flores" list="locais-conhecidos">
+            <datalist id="locais-conhecidos"></datalist>
+          </div>
+          <div class="field">
+            <label for="f-endereco">Endereço</label>
+            <input id="f-endereco" name="endereco" required maxlength="160" autocomplete="off" placeholder="Rua, número, cidade">
+          </div>
+
+          <fieldset class="field">
+            <legend>Onde está o obstáculo?</legend>
+            <div class="chips" id="chips-trecho"></div>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend>Gravidade</legend>
+            <div class="chips sev">
+              <label><input type="radio" name="gravidade" value="baixa"><span data-sev="baixa">Baixa</span></label>
+              <label><input type="radio" name="gravidade" value="media" checked><span data-sev="media">Média</span></label>
+              <label><input type="radio" name="gravidade" value="alta"><span data-sev="alta">Alta</span></label>
+            </div>
+          </fieldset>
+
+          <div class="field">
+            <label for="f-desc">O que está bloqueando a passagem?</label>
+            <textarea id="f-desc" name="descricao" required maxlength="400" rows="2" placeholder="Ex.: carrinho de equipamentos parado na rampa"></textarea>
+          </div>
+
+          <button class="cta" type="submit">
+            <span>Registrar e ver no local</span>
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <p id="form-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div class="stats" aria-label="Resumo">
+        <div><b id="st-pend">0</b><span>pendentes</span></div>
+        <div><b id="st-res">0</b><span>resolvidas</span></div>
+        <div><b id="st-loc">0</b><span>unidades</span></div>
+      </div>
+
+      <nav class="places" aria-label="Unidades monitoradas">
+        <h2>Unidades monitoradas</h2>
+        <ul id="places-list"></ul>
+      </nav>
+
+      <p class="foot">Dados de demonstração · endereços localizados via OpenStreetMap</p>
+    </section>
+
+    <!-- ============ VISÃO 2: GÊMEO DIGITAL ============ -->
+    <section id="view-twin" class="view" aria-label="Gêmeo digital do local" hidden>
+      <header class="twin-top">
+        <button id="back" class="ghost" type="button">
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M16 10H5M9 5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Globo
+        </button>
+        <div class="twin-title">
+          <span class="eyebrow">Gêmeo digital</span>
+          <h2 id="tw-name"></h2>
+          <p id="tw-addr"></p>
+        </div>
+      </header>
+
+      <aside class="panel twin-side">
+        <div class="counters">
+          <div class="c-pend"><b id="tw-pend">0</b><span>pendentes</span></div>
+          <div class="c-res"><b id="tw-res">0</b><span>resolvidas</span></div>
+        </div>
+        <div class="route-state" id="tw-route"></div>
+        <h3>Ocorrências neste local</h3>
+        <ul id="tw-list"></ul>
+        <div id="tw-detail" hidden></div>
+      </aside>
+
+      <p class="hint">Arraste para girar · role para aproximar · clique em um marcador</p>
+    </section>
+  </main>
+
+  <noscript><p style="padding:2rem;color:#fff">O AccessFlow precisa de JavaScript para exibir o mapa 3D.</p></noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
