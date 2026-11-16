@@ -74,3 +74,25 @@ resource "azurerm_monitor_metric_alert" "erros5xx" {
   }
   action { action_group_id = azurerm_monitor_action_group.ag.id }
 }
+
+# Frontend (nginx) no mesmo plano B1: sem custo adicional
+resource "azurerm_linux_web_app" "web" {
+  name                = "accessflow-web-rm550453-${var.location}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  service_plan_id     = azurerm_service_plan.plan.id
+  https_only          = true
+
+  site_config {
+    always_on = true
+    application_stack {
+      docker_image_name   = "whipdino/accessflow-frontend:latest"
+      docker_registry_url = "https://ghcr.io"
+    }
+  }
+
+  app_settings = {
+    WEBSITES_PORT = "8080"
+    API_UPSTREAM  = "https://${azurerm_linux_web_app.api.default_hostname}/"
+  }
+}
