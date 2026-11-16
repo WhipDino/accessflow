@@ -21,6 +21,8 @@ const OK = '#3fe0c0';
 const SEV_NOME = { baixa: 'Baixa', media: 'Média', alta: 'Alta' };
 const ORIGEM = { manual: 'Registro manual', visao: 'Visão computacional', robo: 'Robô de inspeção' };
 const corDe = (o) => (o.status === 'resolvida' ? OK : SEV[o.gravidade] || SEV.media);
+const PESO = { baixa: 1, media: 2, alta: 3 };
+function corDoLugar(p) { const pend = p.itens.filter((o) => o.status !== 'resolvida'); if (!pend.length) return OK; return SEV[pend.reduce((a, o) => ((PESO[o.gravidade] || 2) > (PESO[a] || 0) ? o.gravidade : a), 'baixa')] || SEV.media; }
 
 // capitais para quando a geocodificação não responder (localização aproximada)
 const CAPITAIS = { 'sao paulo': [-23.55, -46.63], 'rio de janeiro': [-22.91, -43.17], 'belo horizonte': [-19.92, -43.94], 'brasilia': [-15.79, -47.88],
@@ -89,7 +91,7 @@ function pintarResumo() {
     const n = p.itens.filter((o) => o.status !== 'resolvida').length;
     ul.append(el('li', {}, el('button', { type: 'button', onclick: () => viajar(p.key) },
       el('span', { class: 'nm', text: p.nome }),
-      el('span', { class: `bd ${n ? 'pend' : 'ok'}`, text: n ? `${n} pendente${n > 1 ? 's' : ''}` : 'livre' }),
+      el('span', { class: `bd ${n ? 'pend' : 'ok'}`, style: `color:${corDoLugar(p)};background:color-mix(in srgb, ${corDoLugar(p)} 16%, transparent)`, text: n ? `${n} pendente${n > 1 ? 's' : ''}` : 'livre' }),
       el('span', { class: 'ad', text: p.endereco || 'Endereço não informado' }))));
     dl.append(el('option', { value: p.nome }));
   }
@@ -192,23 +194,27 @@ function criarGlobo() {
   const marks = new THREE.Group(); g.add(marks); const alvos = [];
   function sync() {
     marks.clear(); alvos.length = 0;
-    for (const p of lugares()) {
-      if (p.lat == null) continue;
-      const pend = p.itens.some((o) => o.status !== 'resolvida'); const cor = new THREE.Color(pend ? '#ffb648' : OK);
-      const base = xyz(p.lat, p.lng, 1.004), n = base.clone().normalize(); const m = new THREE.Group(); m.position.copy(base); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-      m.add(new THREE.Mesh(new THREE.CircleGeometry(0.011, 20), new THREE.MeshBasicMaterial({ color: cor })));
-      const haste = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.11, 6), new THREE.MeshBasicMaterial({ color: cor, transparent: true, opacity: 0.75 })); haste.rotation.x = Math.PI / 2; haste.position.z = 0.055; m.add(haste);
-      const topo = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 16), new THREE.MeshBasicMaterial({ color: cor })); topo.position.z = 0.115; m.add(topo);
-      const anel = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.026, 40), new THREE.MeshBasicMaterial({ color: cor, transparent: true, side: THREE.DoubleSide, depthWrite: false })); anel.userData.fase = Math.random(); anel.userData.pulsa = pend; m.add(anel); m.userData.anel = anel;
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshBasicMaterial({ visible: false })); hit.position.z = 0.05; hit.userData.place = p; m.add(hit); alvos.push(hit);
+    const ps = lugares().filter((p) => p.lat != null).sort((x, y) => x.key.localeCompare(y.key));
+    // unidades na mesma cidade caem no mesmo pixel do globo: abre as hastes em leque para cada uma ter o seu ponto
+    const perto = (x, y) => Math.abs(x.lat - y.lat) < 2.2 && Math.abs(x.lng - y.lng) < 2.2;
+    for (const p of ps) {
+      const grupo = ps.filter((q) => perto(p, q)); const i = grupo.indexOf(p), n = grupo.length;
+      const cor = new THREE.Color(corDoLugar(p)); const pend = p.itens.some((o) => o.status !== 'resolvida');
+      const base = xyz(p.lat, p.lng, 1.004), nrm = base.clone().normalize(); const m = new THREE.Group(); m.position.copy(base); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), nrm);
+      const ang = 0.6 + (i / n) * Math.PI * 2, abre = n > 1 ? 0.07 : 0; const topoPos = new THREE.Vector3(Math.cos(ang) * abre, Math.sin(ang) * abre, 0.115);
+      m.add(new THREE.Mesh(new THREE.CircleGeometry(0.008, 20), new THREE.MeshBasicMaterial({ color: cor })));
+      m.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), topoPos]), new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.8 })));
+      const topo = new THREE.Mesh(new THREE.SphereGeometry(0.013, 16, 16), new THREE.MeshBasicMaterial({ color: cor })); topo.position.copy(topoPos); m.add(topo);
+      const anel = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.026, 40), new THREE.MeshBasicMaterial({ color: cor, transparent: true, side: THREE.DoubleSide, depthWrite: false })); anel.position.set(topoPos.x, topoPos.y, n > 1 ? topoPos.z : 0); anel.userData.fase = Math.random(); anel.userData.pulsa = pend; m.add(anel); m.userData.anel = anel; m.userData.topo = topo; m.userData.key = p.key;
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(n > 1 ? 0.035 : 0.06, 8, 8), new THREE.MeshBasicMaterial({ visible: false })); hit.position.copy(topoPos); hit.userData.place = p; m.add(hit); alvos.push(hit);
       marks.add(m);
     }
   }
   function olharPara(lat, lng) { const p = xyz(lat, lng, 1); return { yaw: -Math.atan2(p.x, p.z), pitch: lat * Math.PI / 180 }; }
   Object.assign(rot, olharPara(-6, -66)); // abre voltado para o Brasil
-  async function voarAte(lat, lng) {
+  async function voarAte(lat, lng, key) {
     const alvo = olharPara(lat, lng); const y0 = rot.yaw, p0 = rot.pitch, d0 = dist; let dy = (alvo.yaw - y0) % (Math.PI * 2);
-    if (dy > Math.PI) dy -= Math.PI * 2; if (dy < -Math.PI) dy += Math.PI * 2; rot.vy = 0; api.livre = false;
+    if (dy > Math.PI) dy -= Math.PI * 2; if (dy < -Math.PI) dy += Math.PI * 2; rot.vy = 0; api.livre = false; api.destino = key;
     await tween(1500, (k) => { rot.yaw = y0 + dy * k; rot.pitch = p0 + (alvo.pitch - p0) * k; dist = d0 + (2.5 - d0) * k; });
     await tween(1300, (k) => { dist = 2.5 + (1.16 - 2.5) * k; });
   }
@@ -218,10 +224,10 @@ function criarGlobo() {
     camera.position.z += (dist - camera.position.z) * 0.12;
     const alvoShift = size.w > 860 ? -Math.min(458, size.w * 0.3) / 2 : 0; shift += (alvoShift * (api.livre ? 1 : 0.0) - shift) * 0.08;
     camera.setViewOffset(size.w, size.h, shift, size.w > 860 ? 0 : size.h * 0.2, size.w, size.h);
-    for (const m of marks.children) { const a = m.userData.anel; const f = ((t * 0.55 + a.userData.fase) % 1); const s = a.userData.pulsa ? 1 + f * 3.2 : 1.4; a.scale.setScalar(s); a.material.opacity = a.userData.pulsa ? 0.9 * (1 - f) : 0.5; }
+    for (const m of marks.children) { const a = m.userData.anel; const alvoEsc = api.destino ? (m.userData.key === api.destino ? 1.5 : 0.45) : 1; m.userData.topo.scale.setScalar(m.userData.topo.scale.x + (alvoEsc - m.userData.topo.scale.x) * 0.1); const f = ((t * 0.55 + a.userData.fase) % 1); const s = a.userData.pulsa ? 1 + f * 3.2 : 1.4; a.scale.setScalar(s); a.material.opacity = a.userData.pulsa ? 0.9 * (1 - f) : 0.5; }
   }
   const api = { scene, camera, sync, tick, voarAte, alvos, rot, livre: true, arrastando: false,
-    zoom(d) { dist = Math.max(2, Math.min(6, dist + d)); }, reset() { dist = 4.1; api.livre = true; camera.position.z = 2.4; },
+    zoom(d) { dist = Math.max(2, Math.min(6, dist + d)); }, reset() { dist = 4.1; api.livre = true; api.destino = null; camera.position.z = 2.4; },
     resize() { camera.aspect = size.w / size.h; camera.updateProjectionMatrix(); } };
   return api;
 }
@@ -399,7 +405,7 @@ async function viajar(key, selecionarId = null) {
   const veu = $('veil'), vg = $('view-globe'), vt = $('view-twin');
   if (!gl) { state.place = key; state.selected = selecionarId; vg.hidden = true; vt.hidden = false; pintarLado(p); state.mode = 'twin'; state.viajando = false; return; }
   $('tip').hidden = true; vg.classList.add('leaving');
-  if (p.lat != null) await globe.voarAte(p.lat, p.lng);
+  if (p.lat != null) await globe.voarAte(p.lat, p.lng, p.key);
   $('veil-text').replaceChildren(document.createTextNode(p.nome), el('small', { text: 'Carregando o gêmeo digital do local' })); veu.classList.add('on'); await esperar(600);
   state.place = key; state.selected = null; state.mode = 'twin'; vg.hidden = true; vg.classList.remove('leaving'); vt.hidden = false; twin.sync(); canvas.style.cursor = '';
   veu.classList.remove('on'); await twin.entrar();
