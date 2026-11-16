@@ -75,6 +75,32 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+
+  compose:
+    name: Stack no docker compose (teste)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Subir a stack completa
+        run: |
+          cp .env.example .env
+          docker compose up -d --build
+      - name: Verificar site, API, Prometheus e Grafana
+        run: |
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost/api/health >/dev/null && curl -fsS http://localhost/ | grep -q AccessFlow \
+              && curl -fsS http://127.0.0.1:9090/-/ready >/dev/null && curl -fsS http://localhost:3000/api/health >/dev/null; then ok=1; break; fi
+            sleep 4
+          done
+          docker compose ps
+          [ "$ok" = 1 ] || { docker compose logs --tail 40; exit 1; }
+          sleep 20
+          curl -fsS 'http://127.0.0.1:9090/api/v1/query?query=up' | grep -q '"value":\[[0-9.]*,"1"\]'
+          echo "Stack OK: site, API, Prometheus (alvo up) e Grafana respondendo"
+      - name: Derrubar
+        if: always()
+        run: docker compose down -v
   publish:
     name: Publicar imagens no GHCR
     runs-on: ubuntu-latest
