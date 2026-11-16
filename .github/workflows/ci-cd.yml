@@ -79,6 +79,9 @@ jobs:
   compose:
     name: Stack no docker compose (teste)
     runs-on: ubuntu-latest
+    env: # o compose usa estas variaveis; aqui o teste constroi as imagens locais
+      API_IMAGE: accessflow-api:local
+      FRONTEND_IMAGE: accessflow-frontend:local
     steps:
       - uses: actions/checkout@v4
       - name: Subir a stack completa
